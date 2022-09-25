@@ -22,7 +22,7 @@ if args.read_model_path: # testing mode
     params.read_nsp_model_path = args.read_nsp_model_path if args.read_nsp_model_path else params.read_nsp_model_path
     args = params
 assert args.read_nsp_model_path is not None
-exp_path, logger, device = initialization_wrapper(args)
+exp_path, logger, device = initialization_wrapper(args, task='multitask_dae')
 Example.configuration(args.dataset, args.embed_size, args.noise_type)
 train_dataset, dev_dataset = Example.load_dataset(choice='train')
 logger.info("Train and Dev dataset size is: %s and %s" % (len(train_dataset), len(dev_dataset)))

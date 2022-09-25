@@ -47,9 +47,9 @@ def set_torch_device(deviceId):
     return device
 
 
-def initialization_wrapper(args):
+def initialization_wrapper(args, task='semantic_parsing'):
     set_random_seed(args.seed)
-    exp_path = hyperparam_path(args)
+    exp_path = hyperparam_path(args, task)
     logger = set_logger(exp_path, args.testing)
     device = set_torch_device(args.deviceId)
     logger.info(f"Initialization finished ...")

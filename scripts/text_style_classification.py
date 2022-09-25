@@ -20,7 +20,7 @@ if args.read_model_path: # testing mode
     params.read_model_path, params.testing, params.device = args.read_model_path, args.testing, args.device
     params.test_batch_size, params.beam_size, params.n_best = args.test_batch_size, args.beam_size, args.n_best
     args = params
-exp_path, logger, device = initialization_wrapper(args)
+exp_path, logger, device = initialization_wrapper(args, task='text_style_classification')
 Example.configuration(args.dataset, args.embed_size)
 train_dataset, dev_dataset = Example.load_dataset(choice='train')
 train_dataset, dev_dataset = UtteranceExample.from_dataset(train_dataset), UtteranceExample.from_dataset(dev_dataset)

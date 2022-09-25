@@ -22,7 +22,7 @@ if args.read_model_path: # testing mode
     params.read_nsp_model_path = args.read_nsp_model_path if args.read_nsp_model_path else params.read_nsp_model_path
     args = params
 assert args.read_nsp_model_path is not None and args.read_pdp_model_path is not None
-exp_path, logger, device = initialization_wrapper(args)
+exp_path, logger, device = initialization_wrapper(args, task='cycle_learning')
 Example.configuration(args.dataset, args.embed_size, args.noise_type)
 train_dataset, dev_dataset = Example.load_dataset(choice='train')
 labeled_dataset, _ = split_dataset(train_dataset, split_ratio=args.labeled) # labeled dataset, semi-supervised settings
@@ -31,15 +31,22 @@ test_dataset = Example.load_dataset(choice='test')
 logger.info("Test dataset size is: %s" % (len(test_dataset)))
 
 ################ load auxiliary models ################
-reward_model = construct_model['reward_model'](args.read_language_model_path, args.read_tsc_model_path, args.read_nsp_model_path, device, args.reward_type)
-logger.info(f"Load dual language models from path: {args.read_language_model_path}")
-logger.info(f"Load text style classification model from path: {args.read_tsc_model_path}")
-nsp_model = reward_model.nsp_model
+if not args.testing:
+    reward_model = construct_model['reward_model'](args.read_language_model_path, args.read_tsc_model_path, args.read_nsp_model_path, device, args.reward_type)
+    logger.info(f"Load dual language models from path: {args.read_language_model_path}")
+    logger.info(f"Load text style classification model from path: {args.read_tsc_model_path}")
+    nsp_model = reward_model.nsp_model
+else:
+    nsp_params = json.load(open(os.path.join(args.read_nsp_model_path, 'params.json'), 'r'))
+    nsp_model = construct_model['semantic_parsing'](**nsp_params).to(device)
+    check_point = torch.load(open(os.path.join(args.read_nsp_model_path, 'model.pkl'), 'rb'), map_location=device)
+    nsp_model.load_state_dict(check_point['model'])
 logger.info(f"Load naive semantic parsing model from path: {args.read_nsp_model_path}")
 
 ############# load dual paraphrase model #############
 if not args.read_model_path:
     paraphrase_params = json.load(open(os.path.join(args.read_pdp_model_path, 'params.json')))
+    paraphrase_params['read_nsp_model'], paraphrase_params['read_pdp_model'] = args.read_nsp_model_path, args.read_pdp_model_path
     json.dump(paraphrase_params, open(os.path.join(exp_path, 'params.json'), 'w'), indent=4)
 else: paraphrase_params = json.load(open(os.path.join(args.read_model_path, 'params.json')))
 paraphrase_model = construct_model['dual_paraphrase'](**paraphrase_params)
