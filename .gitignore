@@ -1,12 +1,10 @@
-exp*
-lib*
-tmp*
+exp
+lib
 log
-evaluator*
-backup
+test*
+evaluator
 pretrained_models
 *.sbatch
-*.bak
 *.ipynb
 .ipynb_checkpoints
 .vscode

@@ -1,135 +1,95 @@
 #coding=utf8
-import argparse, os, sys, time, json
+import os, sys, time, json, torch, gc
+import numpy as np
+import torch.nn as nn
+from argparse import Namespace
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.vocab import Vocab
-from utils.example import Example, split_dataset
-from utils.optimizer import set_optimizer
-from utils.loss import set_loss_function
-from utils.seed import set_random_seed
-from utils.logger import set_logger
-from utils.gpu import set_torch_device
-from utils.constants import *
-from utils.solver.solver_language_model import LMSolver
-from utils.word2vec import load_embeddings
-from utils.hyperparam import hyperparam_lm
-from models.language_model import LanguageModel as model
+from utils.args import init_args
+from utils.constants import PAD
+from utils.initialization import initialization_wrapper
+from utils.example import Example
+from utils.batch import get_minibatch
+from utils.optimization import set_optimizer
+from models.model_constructor import construct_model
+from scripts.eval_model import decode
 
-############################### Arguments parsing and Preparations ##############################
+################ initialization ################
+args = init_args()
+if args.read_model_path: # testing mode
+    params = json.load(open(os.path.join(args.read_model_path, 'params.json')), object_hook=lambda d: Namespace(**d))
+    params.read_model_path, params.testing, params.device = args.read_model_path, args.testing, args.device
+    params.test_batch_size, params.beam_size, params.n_best = args.test_batch_size, args.beam_size, args.n_best
+    args = params
+exp_path, logger, device = initialization_wrapper(args)
+Example.configuration(args.dataset, args.embed_size)
+train_dataset, dev_dataset = Example.load_dataset(choice='train')
+logger.info("Train and Dev dataset size is: %s and %s" % (len(train_dataset), len(dev_dataset)))
 
-def main(args=sys.argv[1:]):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--task', type=str, default='language_model', help='language model')
-    parser.add_argument('--testing', action='store_true', help='Only test your model (default is training && testing)')
-    parser.add_argument('--dataset', required=True, help='which dataset to experiemnt on')
-    # pretrained models
-    parser.add_argument('--read_model_path', required=False, help='Read model and hyperparams from this path')
-    # model paras
-    parser.add_argument('--emb_size', type=int, default=100, help='embedding size')
-    parser.add_argument('--hidden_dim', type=int, default=200, help='hidden layer dimension')
-    parser.add_argument('--num_layers', type=int, default=1, help='number of hidden layers')
-    parser.add_argument('--cell', default='lstm', choices=['lstm', 'gru'], help='rnn cell choice')
-    parser.add_argument('--decoder_tied', action='store_true', help='whether use the same embedding weights and output matrix')
-    # training paras
-    parser.add_argument('--reduction', default='sum', choices=['mean', 'sum'], help='loss function argument')
-    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--l2', type=float, default=1e-5, help='weight decay (L2 penalty)')
-    parser.add_argument('--dropout', type=float, default=0.5, help='dropout rate at each non-recurrent layer')
-    parser.add_argument('--batchSize', type=int, default=16, help='input batch size')
-    parser.add_argument('--test_batchSize', type=int, default=128, help='input batch size in decoding')
-    parser.add_argument('--init_weight', type=float, default=0.2, help='all weights will be set to [-init_weight, init_weight] during initialization')
-    parser.add_argument('--max_norm', type=float, default=5, help="threshold of gradient clipping (2-norm)")
-    parser.add_argument('--max_epoch', type=int, default=100, help='max number of epochs to train for')
-    # special paras
-    parser.add_argument('--labeled', type=float, default=1.0, help='training use only this propotion of dataset')
-    parser.add_argument('--deviceId', type=int, default=0, help='train model on ith gpu. -1:cpu')
-    parser.add_argument('--seed', type=int, default=999, help='set initial random seed')
-    opt = parser.parse_args(args)
-    if opt.testing:
-        assert opt.read_model_path
-    return opt
+################ construct model ################
+if not args.read_model_path:
+    args.vocab_size, args.pad_idx = len(Example.vocab.nl2id), Example.vocab.nl2id[PAD]
+    json.dump(vars(args), open(os.path.join(exp_path, 'params.json'), 'w'), indent=4)
+model = construct_model['language_model'](**vars(args)).to(device)
 
-opt = main()
-
-####################### Output path, logger, device and random seed configuration #################
-
-exp_path = opt.read_model_path if opt.testing else hyperparam_lm(opt)
-if not os.path.exists(exp_path):
-    os.makedirs(exp_path)
-
-logger = set_logger(exp_path, testing=opt.testing)
-logger.info("Parameters: " + str(json.dumps(vars(opt), indent=4)))
-logger.info("Experiment path: %s" % (exp_path))
-opt.device = set_torch_device(opt.deviceId)
-set_random_seed(opt.seed)
-
-################################ Vocab and Data Reader ###########################
-
-lm_vocab = Vocab(opt.dataset, task='language_model')
-logger.info("Vocab size for natural language sentence is: %s" % (len(lm_vocab.nl2id)))
-logger.info("Vocab size for canonical form is: %s" % (len(lm_vocab.cf2id)))
-
-logger.info("Read dataset %s starts at %s" % (opt.dataset, time.asctime(time.localtime(time.time()))))
-Example.set_domain(opt.dataset)
-if not opt.testing:
-    train_dataset, dev_dataset = Example.load_dataset(choice='train')
-    train_dataset, _ = split_dataset(train_dataset, opt.labeled)
-    logger.info("Train and dev dataset size is: %s and %s" % (len(train_dataset), len(dev_dataset)))
-test_dataset = Example.load_dataset(choice='test')
-logger.info("Test dataset size is: %s" % (len(test_dataset)))
-
-###################################### Model Construction ########################################
-
-if not opt.testing:
-    nl_params = {
-        'emb_size': opt.emb_size, 'vocab_size': len(lm_vocab.nl2id), 'pad_token_idxs': [lm_vocab.nl2id[PAD]],
-        'hidden_dim': opt.hidden_dim, 'decoder_tied': opt.decoder_tied, 'num_layers': opt.num_layers, 'cell': opt.cell,
-        'dropout': opt.dropout, 'init': opt.init_weight
-    }
-    json.dump(nl_params, open(os.path.join(exp_path, 'nl_params.json'), 'w'), indent=4)
-    cf_params = {
-        'emb_size': opt.emb_size, 'vocab_size': len(lm_vocab.cf2id), 'pad_token_idxs': [lm_vocab.cf2id[PAD]],
-        'hidden_dim': opt.hidden_dim, 'decoder_tied': opt.decoder_tied, 'num_layers': opt.num_layers, 'cell': opt.cell,
-        'dropout': opt.dropout, 'init': opt.init_weight
-    }
-    json.dump(cf_params, open(os.path.join(exp_path, 'cf_params.json'), 'w'), indent=4)
+############# model initialization #############
+if not args.read_model_path: # init word embeddings with GloVe
+    ratio = Example.word2vec.load_embeddings(model.nl_lm.encoder, Example.vocab.nl2id, device)
+    logger.info(f"{ratio * 100:.2f} word embeddings initialized from GloVe")
 else:
-    nl_params = json.load(open(os.path.join(exp_path, 'nl_params.json'), 'r'))
-    cf_params = json.load(open(os.path.join(exp_path, 'cf_params.json'), 'r'))
-nl_model = model(**nl_params)
-nl_model = nl_model.to(opt.device)
-cf_model = model(**cf_params)
-cf_model = cf_model.to(opt.device)
+    check_point = torch.load(open(os.path.join(args.read_model_path, 'model.pkl'), 'rb'), map_location=device)
+    model.load_state_dict(check_point['model'])
+    logger.info(f"Load model from path: {args.read_model_path}")
 
-##################################### Model Initialization #########################################
+decode_task = 'language_model'
+################ training/decode ################
+if not args.testing:
+    loss_function = nn.NLLLoss(ignore_index=Example.vocab.nl2id[PAD], reduction='sum')
+    num_training_steps = args.max_epoch * ((len(train_dataset) + args.batch_size - 1) // args.batch_size)
+    num_warmup_steps = int(args.warmup_ratio * num_training_steps)
+    optimizer, scheduler = set_optimizer(model, args, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
+    best_result = {"iter": 0, "nl_ppl": 1e8, "cf_ppl": 1e8}
+    logger.info("Start training ... ...")
+    train_data_index = np.arange(len(train_dataset))
 
-if not opt.testing:
-    ratio = load_embeddings(nl_model.encoder, lm_vocab.nl2id, opt.device)
-    logger.info("%.2f%% word embeddings from pretrained vectors" % (ratio * 100))
-    ratio = load_embeddings(cf_model.encoder, lm_vocab.cf2id, opt.device)
-    logger.info("%.2f%% canonical form word embeddings from pretrained vectors" % (ratio * 100))
+    for i in range(args.max_epoch):
+        start_time, nl_epoch_loss, cf_epoch_loss = time.time(), 0, 0
+        np.random.shuffle(train_data_index)
+        model.train()
+        for j in range(0, len(train_dataset), args.batch_size):
+            optimizer.zero_grad()
+            inputs, lens = get_minibatch(train_dataset, task='language_model', data_index=train_data_index,
+                index=j, batch_size=args.batch_size, device=device, input_side='nl')
+            batch_outputs = model(inputs, lens, input_side='nl')
+            loss = loss_function(batch_outputs.contiguous().view(-1, args.vocab_size), inputs[:, 1:].contiguous().view(-1))
+            nl_epoch_loss += loss.item()
+            loss.backward()
+            inputs, lens = get_minibatch(train_dataset, task='language_model', data_index=train_data_index,
+                index=j, batch_size=args.batch_size, device=device, input_side='cf')
+            batch_outputs = model(inputs, lens, input_side='cf')
+            loss = loss_function(batch_outputs.contiguous().view(-1, args.vocab_size), inputs[:, 1:].contiguous().view(-1))
+            cf_epoch_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+
+        logger.info(f'Training:\tEpoch: {i:d}\tTime: {time.time() - start_time:.2f}s\tNL/CF Loss: {nl_epoch_loss:.4f}/{cf_epoch_loss:.4f}')
+        gc.collect()
+        torch.cuda.empty_cache()
+        if i < args.eval_after_epoch:
+            continue
+
+        start_time = time.time()
+        nl_ppl, cf_ppl = decode(model, dev_dataset, None, args.test_batch_size, device=device, task=decode_task)
+        logger.info(f'Dev Evaluation:\tEpoch: {i:d}\tTime: {time.time() - start_time:.2f}s\tNL/CF PPL: {nl_ppl:.4f}/{cf_ppl:.4f}')
+
+        if nl_ppl + cf_ppl < best_result['nl_ppl'] + best_result['cf_ppl']:
+            best_result['iter'], best_result['nl_ppl'], best_result['cf_ppl'] = i, nl_ppl, cf_ppl
+            torch.save({'model': model.state_dict(), 'result': best_result}, open(os.path.join(exp_path, 'model.pkl'), 'wb'))
+            logger.info(f'NEW BEST:\tEpoch: {i:d}\tBest NL/CF PPL: {nl_ppl:.4f}/{cf_ppl:.4f}')
+
+    logger.info(f"FINAL BEST:\tEpoch: {best_result['iter']:d}\tBest NL/CF PPL: {best_result['nl_ppl']:.4f}/{best_result['cf_ppl']:.4f}")
 else:
-    model_path = os.path.join(opt.read_model_path, 'nl_model.pkl')
-    nl_model.load_model(model_path)
-    logger.info("Load NL Language Model from path %s" % (model_path))
-    model_path = os.path.join(opt.read_model_path, 'cf_model.pkl')
-    cf_model.load_model(model_path)
-    logger.info("Load CF Language Model from path %s" % (model_path))
-
-# set loss function and optimizer
-loss_function = {}
-loss_function["nl"] = set_loss_function(ignore_index=lm_vocab.nl2id[PAD], reduction=opt.reduction)
-loss_function["cf"] = set_loss_function(ignore_index=lm_vocab.cf2id[PAD], reduction=opt.reduction)
-optimizer = set_optimizer(nl_model, cf_model, lr=opt.lr, l2=opt.l2, max_norm=opt.max_norm)
-
-###################################### Training and Decoding #######################################
-
-solver = LMSolver(nl_model, cf_model, lm_vocab, loss_function, optimizer, exp_path, logger, device=opt.device)
-if not opt.testing:
-    logger.info("Training starts at %s" % (time.asctime(time.localtime(time.time()))))
-    solver.train_and_decode(train_dataset, dev_dataset, test_dataset,
-        batchSize=opt.batchSize, test_batchSize=opt.test_batchSize, max_epoch=opt.max_epoch)
-else:
-    logger.info("Testing starts at %s" % (time.asctime(time.localtime(time.time()))))
+    logger.info("Start evaluating ... ...")
     start_time = time.time()
-    nl_ppl, cf_ppl = solver.decode(test_dataset, os.path.join(exp_path, 'test.eval'), opt.test_batchSize)
-    logger.info('Evaluation cost: %.4fs\tNL/CF ppl : %.4f/%.4f' % (time.time() - start_time, nl_ppl, cf_ppl))
+    nl_ppl, cf_ppl = decode(model, dev_dataset, None, args.test_batch_size, device=device, task=decode_task)
+    logger.info(f'Evaluation cost: {time.time() - start_time:.2f}s\tNL/CF PPL: {nl_ppl:.4f}/{cf_ppl:.4f}')

@@ -1,7 +1,51 @@
-from __future__ import division
+#coding=utf8
 import torch
-from models import penalties
-from utils.constants import *
+from utils.constants import BOS, EOS, PAD
+
+
+class PenaltyBuilder(object):
+    """
+    Returns the Length Penalty function for Beam Search.
+    Args:
+        length_pen (str): option name of length pen
+    """
+    def __init__(self, length_pen):
+        self.length_pen = length_pen
+
+    def length_penalty(self):
+        if self.length_pen == "wu":
+            return self.length_wu
+        elif self.length_pen == "avg":
+            return self.length_average
+        else:
+            return self.length_none
+
+    """
+    Below are all the different penalty terms implemented so far
+    """
+
+    def length_wu(self, beam, logprobs, alpha=0.):
+        """
+        NMT length re-ranking score from
+        "Google's Neural Machine Translation System" :cite:`wu2016google`.
+        """
+
+        modifier = (((5 + len(beam.next_ys)) ** alpha) /
+                    ((5 + 1) ** alpha))
+        return (logprobs / modifier)
+
+    def length_average(self, beam, logprobs, alpha=0.):
+        """
+        Returns the average probability of tokens in a sequence.
+        """
+        return logprobs / len(beam.next_ys)
+
+    def length_none(self, beam, logprobs, alpha=0.):
+        """
+        Returns unmodified scores.
+        """
+        return logprobs
+
 
 class Beam(object):
     """
@@ -68,7 +112,6 @@ class Beam(object):
 
         Returns: True if beam search is complete.
         """
-        num_words = word_probs.size(1)
         # force the output to be longer than self.min_length
         cur_len = len(self.next_ys)
         masks = torch.zeros(word_probs.size(), requires_grad=False, dtype=torch.float, device=self.device)
@@ -99,7 +142,7 @@ class Beam(object):
 
         # best_scores_id is flattened beam x word array, so calculate which
         # word and beam each score came from
-        prev_k = best_scores_id / cur_top_k
+        prev_k = torch.div(best_scores_id, cur_top_k, rounding_mode='floor')
         self.prev_ks.append(prev_k)
         next_y = torch.take(sort_key.contiguous().view(-1), best_scores_id)
         self.next_ys.append(next_y)
@@ -162,7 +205,8 @@ class Beam(object):
         for j in range(len(self.prev_ks[:timestep]) - 1, -1, -1):
             hyp.append(self.next_ys[j + 1][k])
             k = self.prev_ks[j][k]
-        return torch.stack(hyp[::-1])
+        return torch.stack(hyp[::-1]).tolist()
+
 
 class GNMTGlobalScorer(object):
     """
@@ -175,7 +219,7 @@ class GNMTGlobalScorer(object):
 
     def __init__(self, alpha, len_penalty):
         self.alpha = alpha
-        penalty_builder = penalties.PenaltyBuilder(len_penalty)
+        penalty_builder = PenaltyBuilder(len_penalty)
         # Probability will be divided by this
         self.length_penalty = penalty_builder.length_penalty()
 

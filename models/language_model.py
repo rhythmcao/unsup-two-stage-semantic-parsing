@@ -1,73 +1,84 @@
 #coding=utf8
-
-''' Language Model '''
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from models.model_utils import rnn_wrapper, lens2mask
 
+
+class DualLanguageModel(nn.Module):
+
+    def __init__(self, *args, **kwargs) -> None:
+        super(DualLanguageModel, self).__init__()
+        self.nl_lm = LanguageModel(*args, **kwargs)
+        self.cf_lm = LanguageModel(*args, **kwargs)
+        # share word embeddings and decoder tied
+        if kwargs.get('share_encoder', True):
+            self.cf_lm.encoder = self.nl_lm.encoder
+        self.nl_lm.decoder.weight = self.nl_lm.encoder.weight
+        self.cf_lm.decoder.weight = self.cf_lm.encoder.weight
+
+
+    def forward(self, inputs, lens, input_side='nl'):
+        if input_side == 'nl':
+            return self.nl_lm(inputs, lens)
+        else:
+            return self.cf_lm(inputs, lens)
+
+
+    def sentence_logprob(self, inputs, lens, input_side='nl'):
+        if input_side == 'nl':
+            return self.nl_lm.sentence_logprob(inputs, lens)
+        else:
+            return self.cf_lm.sentence_logprob(inputs, lens)
+
+
 class LanguageModel(nn.Module):
+    """ Traditional RNN Language Model
     """
-        Container module with an encoder, a recurrent module, and a decoder.
-    """
-    def __init__(self, vocab_size=950, emb_size=1024, hidden_dim=256,
-            num_layers=1, cell='lstm', pad_token_idxs=[], dropout=0.5,
-            decoder_tied=False, init=0.2, **kargs):
+    def __init__(self, vocab_size=None, pad_idx=0, embed_size=100, hidden_size=200,
+            num_layers=1, cell='lstm', dropout=0.5, init_weight=0.2, **kwargs):
         super(LanguageModel, self).__init__()
         self.dropout_layer = nn.Dropout(dropout)
-        self.encoder = nn.Embedding(vocab_size, emb_size)
+        self.encoder = nn.Embedding(vocab_size, embed_size, padding_idx=pad_idx)
         self.cell = cell.upper() # RNN/LSTM/GRU
-        self.rnn = getattr(nn, self.cell)(
-            emb_size, hidden_dim, num_layers,
-            batch_first=True, dropout=(dropout if num_layers > 1 else 0)
-        )
-        self.affine = nn.Linear(hidden_dim, emb_size)
-        self.decoder = nn.Linear(emb_size, vocab_size)
+        self.rnn = getattr(nn, self.cell)(embed_size, hidden_size, num_layers, batch_first=True,
+            bidirectional=False, dropout=(dropout if num_layers > 1 else 0))
+        self.affine = nn.Linear(hidden_size, embed_size)
+        self.decoder = nn.Linear(embed_size, vocab_size)
 
-        if decoder_tied:
-            self.decoder.weight = self.encoder.weight # shape: vocab_size, emb_size
-
-        self.hidden_dim = hidden_dim
+        self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.pad_token_idxs = list(pad_token_idxs)
 
-        if init:
+        if init_weight is not None and init_weight > 0:
             for p in self.parameters():
-                p.data.uniform_(-init, init)
-            for pad_token_idx in pad_token_idxs:
-                self.encoder.weight.data[pad_token_idx].zero_()
+                p.data.uniform_(-init_weight, init_weight)
+            self.encoder.weight.data[pad_idx].zero_()
 
-    def pad_embedding_grad_zero(self):
-        for pad_token_idx in self.pad_token_idxs:
-            self.encoder.weight.grad[pad_token_idx].zero_()
 
-    def forward(self, input_feats, lens):
-        input_feats, lens = input_feats[:, :-1], lens - 1
-        emb = self.dropout_layer(self.encoder(input_feats)) # bsize, seq_length, emb_size
-        output, _ = rnn_wrapper(self.rnn, emb, lens, self.cell)
-        decoded = self.decoder(self.affine(self.dropout_layer(output)))
-        scores = F.log_softmax(decoded, dim=-1)
+    def forward(self, inputs, lens):
+        inputs, lens = inputs[:, :-1], lens - 1
+        word_embeds = self.dropout_layer(self.encoder(inputs)) # bsize x seqlen x embed_size
+        outputs = rnn_wrapper(self.rnn, word_embeds, lens, self.cell, need_hidden_states=False)
+        hiddens = self.decoder(self.affine(self.dropout_layer(outputs)))
+        scores = F.log_softmax(hiddens, dim=-1)
         return scores
 
-    def sent_logprobability(self, input_feats, lens):
-        '''
-            Given sentences, calculate its length-normalized log-probability
-            Sequence must contain <s> and </s> symbol
-            lens: length tensor
+
+    def sentence_logprob(self, inputs, lens):
+        ''' Given sentences, calculate its length-normalized log-probability
+        inputs must contain BOS and EOS symbol.
+        @args:
+            inputs: torch.FloatTensor, bsize x seqlen
+            lens: torch.LongTensor, bsize
+        @return:
+            length-normalized logprob score, torch.FloatTensor, bsize
         '''
         lens = lens - 1
-        input_feats, output_feats = input_feats[:, :-1], input_feats[:, 1:]
-        emb = self.dropout_layer(self.encoder(input_feats)) # bsize, seq_len, emb_size
-        output, _ = rnn_wrapper(self.rnn, emb, lens, self.cell)
-        decoded = self.decoder(self.affine(self.dropout_layer(output)))
-        scores = F.log_softmax(decoded, dim=-1)
-        log_prob = torch.gather(scores, 2, output_feats.unsqueeze(-1)).contiguous().view(output.size(0), output.size(1))
-        sent_log_prob = torch.sum(log_prob * lens2mask(lens).float(), dim=-1)
-        return sent_log_prob / lens.float()
-
-    def load_model(self, load_dir):
-        self.load_state_dict(torch.load(open(load_dir, 'rb'), map_location=lambda storage, loc: storage))
-
-    def save_model(self, save_dir):
-        torch.save(self.state_dict(), open(save_dir, 'wb'))
+        inputs, targets = inputs[:, :-1], inputs[:, 1:]
+        word_embeds = self.dropout_layer(self.encoder(inputs)) # bsize x seqlen x embed_size
+        outputs = rnn_wrapper(self.rnn, word_embeds, lens, self.cell, need_hidden_states=False)
+        hiddens = self.decoder(self.affine(self.dropout_layer(outputs)))
+        scores = F.log_softmax(hiddens, dim=-1)
+        logprobs = torch.gather(scores, 2, targets.unsqueeze(-1)).contiguous().view(outputs.size(0), outputs.size(1))
+        sentence_logprobs = torch.sum(logprobs.masked_fill_(~lens2mask(lens), 0.), dim=-1)
+        return sentence_logprobs / lens.float()
