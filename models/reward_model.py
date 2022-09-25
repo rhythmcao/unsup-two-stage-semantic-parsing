@@ -1,6 +1,5 @@
 #coding=utf8
 import os, json, torch
-from utils.constants import BOS, EOS, PAD, UNK
 from utils.example import Example, UtteranceExample
 from utils.domain import get_bleu_score
 from utils.batch import get_minibatch_language_model, get_minibatch_text_style_classification, get_minibatch_semantic_parsing
@@ -31,7 +30,7 @@ class RewardModel(): # do not inherit from nn.Module, gradient is not calculated
         self.nsp_model.eval()
 
         self.device = device
-        self.reward_type_type = reward_type
+        self.reward_type = reward_type
 
 
     def forward(self, *args, choice='nl2cf2nl_val'):

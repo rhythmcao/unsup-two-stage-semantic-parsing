@@ -17,7 +17,7 @@ batch_size=16
 test_batch_size=64
 max_norm=5
 max_epoch=50
-beam=5
+beam_size=5
 n_best=1
 
 # special params

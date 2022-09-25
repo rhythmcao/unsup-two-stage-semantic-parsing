@@ -3,13 +3,11 @@ import torch
 import torch.nn as nn
 from utils.example import Example
 from utils.batch import get_minibatch_paraphrase
-from models.reward_model import RewardModel
-from models.paraphrase_model import DualParaphraseModel
 
 
 class CycleLearningModel(nn.Module):
 
-    def __init__(self, paraphrase_model: DualParaphraseModel, reward_model: RewardModel, alpha=0.5, beta=0.5, sample_size=6, **kargs):
+    def __init__(self, paraphrase_model, reward_model, alpha=0.5, beta=0.5, sample_size=6, **kargs):
         """
         @args:
             alpha: reward for cycle nl2cf2nl = cf_val_reward * alpha + nl_rec_reward * (1 - alpha)

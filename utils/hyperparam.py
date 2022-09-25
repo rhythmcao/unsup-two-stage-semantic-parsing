@@ -93,7 +93,7 @@ def hyperparam_path_cycle(args):
     task_path = 'task_%s' % (args.task)
     dataset_path = 'dataset_%s__labeled_%s' % (args.dataset, args.labeled)
     exp_path = ''
-    exp_path += 'schema_%s__reward_%s__noise_%s__' % (args.train_scheme, args.reward_type, args.noise_type)
+    exp_path += 'scheme_%s__reward_%s__noise_%s__' % (args.train_scheme, args.reward_type, args.noise_type)
     exp_path += 'sample_%s__alpha_%s__beta_%s__' % (args.sample_size, args.alpha, args.beta)
     exp_path += 'lr_%s__' % (args.lr)
     exp_path += 'l2_%s__' % (args.l2)

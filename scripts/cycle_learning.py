@@ -11,6 +11,7 @@ from utils.example import Example, split_dataset
 from utils.batch import get_minibatch
 from utils.optimization import set_optimizer
 from models.model_constructor import construct_model
+from models.reward_model import RewardModel
 from scripts.eval_model import decode, generate_pseudo_dataset
 
 ################ initialization ################
@@ -32,11 +33,12 @@ logger.info("Test dataset size is: %s" % (len(test_dataset)))
 
 ################ load auxiliary models ################
 if not args.testing:
-    reward_model = construct_model['reward_model'](args.read_language_model_path, args.read_tsc_model_path, args.read_nsp_model_path, device, args.reward_type)
+    reward_model = RewardModel(args.read_language_model_path, args.read_tsc_model_path, args.read_nsp_model_path, device, args.reward_type)
     logger.info(f"Load dual language models from path: {args.read_language_model_path}")
     logger.info(f"Load text style classification model from path: {args.read_tsc_model_path}")
     nsp_model = reward_model.nsp_model
 else:
+    reward_model = None
     nsp_params = json.load(open(os.path.join(args.read_nsp_model_path, 'params.json'), 'r'))
     nsp_model = construct_model['semantic_parsing'](**nsp_params).to(device)
     check_point = torch.load(open(os.path.join(args.read_nsp_model_path, 'model.pkl'), 'rb'), map_location=device)
@@ -65,18 +67,18 @@ if not args.testing:
     optimizer, scheduler = set_optimizer(model, args, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
     best_result = {"iter": 0, "metric": 0, "dev_acc": 0., "test_acc": 0.}
     logger.info("Start training ... ...")
-    if 'dae' in args.train_schema: dae_nl_index, dae_cf_index = np.arange(len(train_dataset)), np.arange(len(train_dataset))
+    if 'dae' in args.train_scheme: dae_nl_index, dae_cf_index = np.arange(len(train_dataset)), np.arange(len(train_dataset))
     if 'dbt' in args.train_scheme: dbt_nl_index, dbt_cf_index = np.arange(len(train_dataset)), np.arange(len(train_dataset))
     if 'drl' in args.train_scheme: drl_nl_index, drl_cf_index = np.arange(len(train_dataset)), np.arange(len(train_dataset))
     if len(labeled_dataset) > 0: labeled_data_index = np.arange(len(labeled_dataset))
     for i in range(args.max_epoch):
         start_time, nl2cf_epoch_loss, cf2nl_epoch_loss = time.time(), 0, 0
-        if 'dae' in args.train_schema: np.random.shuffle(dae_nl_index) ; np.random.shuffle(dae_cf_index)
+        if 'dae' in args.train_scheme: np.random.shuffle(dae_nl_index) ; np.random.shuffle(dae_cf_index)
         if 'dbt' in args.train_scheme: np.random.shuffle(dbt_nl_index) ; np.random.shuffle(dbt_cf_index)
         if 'drl' in args.train_scheme: np.random.shuffle(drl_nl_index) ; np.random.shuffle(drl_cf_index)
         if len(labeled_dataset) > 0: np.random.shuffle(labeled_data_index)
         
-        if 'dbt' in args.train_schema: # generate pseudo labeled dataset via dual back-translation
+        if 'dbt' in args.train_scheme: # generate pseudo labeled dataset via dual back-translation
             dbt_nl2cf_dataset, dbt_cf2nl_dataset = generate_pseudo_dataset(model, train_dataset, batch_size=args.test_batch_size,
                 beam_size=args.beam_size, device=device)
             logger.info(f'Generation:\tEpoch: {i:d}\tTime: {time.time() - start_time:.2f}s\tDual Back-translation dataset construction')
@@ -85,7 +87,7 @@ if not args.testing:
         model.train()
         for j in range(0, len(train_dataset), args.batch_size):
             optimizer.zero_grad()
-            if 'dae' in args.train_schema:
+            if 'dae' in args.train_scheme:
                 # noisy cf -> cf
                 inputs, lens, outputs, out_lens = get_minibatch(train_dataset, task='multitask_dae', data_index=dae_cf_index,
                     index=j, batch_size=args.batch_size, device=device, input_side='cf', train_dataset=train_dataset)
@@ -101,7 +103,7 @@ if not args.testing:
                 cf2nl_epoch_loss += loss.item()
                 loss.backward()
 
-            if 'dbt' in args.train_schema:
+            if 'dbt' in args.train_scheme:
                 # nl -> cf supervised training on pseudo samples
                 inputs, lens, outputs, out_lens = get_minibatch(dbt_nl2cf_dataset, task='paraphrase', data_index=dbt_nl_index,
                     index=j, batch_size=args.batch_size, device=device, input_side='nl')
@@ -117,7 +119,7 @@ if not args.testing:
                 cf2nl_epoch_loss += loss.item()
                 loss.backward()
 
-            if 'drl' in args.train_schema:
+            if 'drl' in args.train_scheme:
                 # dual reinforcement learning starts from nl -> cf -> nl
                 inputs, lens, raw_inputs, variables = get_minibatch(train_dataset, task='paraphrase_cycle', data_index=drl_nl_index,
                     index=j, batch_size=args.batch_size, device=device, input_side='nl')
@@ -129,7 +131,7 @@ if not args.testing:
                 # dual reinforcement learning starts from cf -> nl -> cf
                 inputs, lens, raw_inputs = get_minibatch(train_dataset, task='paraphrase_cycle', data_index=drl_cf_index,
                     index=j, batch_size=args.batch_size, device=device, input_side='cf')
-                nl2cf_loss, cf2nl_loss = model.cycle_learning(inputs, lens, raw_inputs, task='cf2nl2cf')
+                cf2nl_loss, nl2cf_loss = model.cycle_learning(inputs, lens, raw_inputs, task='cf2nl2cf')
                 nl2cf_epoch_loss += nl2cf_loss.item()
                 cf2nl_epoch_loss += cf2nl_loss.item()
                 nl2cf_loss.backward()
