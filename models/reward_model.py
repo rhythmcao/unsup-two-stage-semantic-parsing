@@ -9,25 +9,28 @@ from models.model_constructor import construct_model
 
 class RewardModel(): # do not inherit from nn.Module, gradient is not calculated
 
-    def __init__(self, language_model_path, tsc_model_path, nsp_model_path, device='cpu', reward_type="flu+sty+rel"):
+    def __init__(self, language_model_path=None, tsc_model_path=None, nsp_model_path=None, device='cpu', reward_type="flu+sty+rel"):
         super(RewardModel, self).__init__()
-        lm_params = json.load(open(os.path.join(language_model_path, 'params.json'), 'r'))
-        self.language_model = construct_model['language_model'](**lm_params).to(device)
-        check_point = torch.load(open(os.path.join(language_model_path, 'model.pkl'), 'rb'), map_location=device)
-        self.language_model.load_state_dict(check_point['model'])
-        self.language_model.eval()
+        self.language_model, self.text_style_classifier, self.nsp_model = None, None, None
 
-        tsc_params = json.load(open(os.path.join(tsc_model_path, 'params.json'), 'r'))
-        self.text_style_classifier = construct_model['text_style_classification'](**tsc_params).to(device)
-        check_point = torch.load(open(os.path.join(tsc_model_path, 'model.pkl'), 'rb'), map_location=device)
-        self.text_style_classifier.load_state_dict(check_point['model'])
-        self.text_style_classifier.eval()
-
-        nsp_params = json.load(open(os.path.join(nsp_model_path, 'params.json'), 'r'))
-        self.nsp_model = construct_model['semantic_parsing'](**nsp_params).to(device)
-        check_point = torch.load(open(os.path.join(nsp_model_path, 'model.pkl'), 'rb'), map_location=device)
-        self.nsp_model.load_state_dict(check_point['model'])
-        self.nsp_model.eval()
+        if language_model_path is not None and os.path.exists(language_model_path):
+            lm_params = json.load(open(os.path.join(language_model_path, 'params.json'), 'r'))
+            self.language_model = construct_model['language_model'](**lm_params).to(device)
+            check_point = torch.load(open(os.path.join(language_model_path, 'model.pkl'), 'rb'), map_location=device)
+            self.language_model.load_state_dict(check_point['model'])
+            self.language_model.eval()
+        if tsc_model_path is not None and os.path.exists(tsc_model_path):
+            tsc_params = json.load(open(os.path.join(tsc_model_path, 'params.json'), 'r'))
+            self.text_style_classifier = construct_model['text_style_classification'](**tsc_params).to(device)
+            check_point = torch.load(open(os.path.join(tsc_model_path, 'model.pkl'), 'rb'), map_location=device)
+            self.text_style_classifier.load_state_dict(check_point['model'])
+            self.text_style_classifier.eval()
+        if nsp_model_path is not None and os.path.exists(nsp_model_path):
+            nsp_params = json.load(open(os.path.join(nsp_model_path, 'params.json'), 'r'))
+            self.nsp_model = construct_model['semantic_parsing'](**nsp_params).to(device)
+            check_point = torch.load(open(os.path.join(nsp_model_path, 'model.pkl'), 'rb'), map_location=device)
+            self.nsp_model.load_state_dict(check_point['model'])
+            self.nsp_model.eval()
 
         self.device = device
         self.reward_type = reward_type
