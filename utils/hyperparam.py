@@ -78,7 +78,7 @@ def hyperparam_path_tsc(args):
     task_path = 'task_%s' % (args.task)
     exp_path = 'dataset_%s__' % (args.dataset)
     exp_path += 'es_%s__' % (args.embed_size)
-    exp_path += 'ft_%s__' % ('+'.join(['x'.join(pair) for pair in zip(args.filters, args.filters_num)]))
+    exp_path += 'ft_%s__' % ('+'.join([f'{str(f)}x{str(n)}' for f, n in zip(args.filters, args.filters_num)]))
     exp_path += 'dp_%s__' % (args.dropout)
     exp_path += 'lr_%s__' % (args.lr)
     exp_path += 'l2_%s__' % (args.l2)
