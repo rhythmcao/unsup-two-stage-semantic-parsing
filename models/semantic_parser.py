@@ -1,7 +1,7 @@
 #coding=utf8
 import torch
 import torch.nn as nn
-from transformers import AutoTokenizer, AutoModel
+from transformers import BertTokenizer, BertModel
 from allennlp.modules.elmo import Elmo, batch_to_ids
 from models.model_utils import PoolingFunction, lens2mask
 from models.paraphrase_model import ParaphraseModel
@@ -26,7 +26,7 @@ def multitask_semantic_parsing_model(**kwargs):
 
 
 class MultitaskSemanticParser(nn.Module):
-    
+
     def __init__(self, sp_model, dae_model):
         super(MultitaskSemanticParser, self).__init__()
         self.sp_model, self.dae_model = sp_model, dae_model
@@ -68,8 +68,8 @@ class BERTEmbedding(nn.Module):
 
     def __init__(self, model_path, dropout=0.5, pooling_method='first-pooling') -> None:
         super(BERTEmbedding, self).__init__()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        self.plm = AutoModel.from_pretrained(model_path)
+        self.tokenizer = BertTokenizer.from_pretrained(model_path)
+        self.plm = BertModel.from_pretrained(model_path)
         self.pooling_function = PoolingFunction(self.plm.config.hidden_size, self.plm.config.hidden_size, method=pooling_method)
         self.dropout_layer = nn.Dropout(p=dropout)
 
