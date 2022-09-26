@@ -20,14 +20,14 @@ batch_size=16
 test_batch_size=64
 init_weight=0.2
 max_norm=5
-eval_after_epoch=60
-max_epoch=100
+eval_after_epoch=30
+max_epoch=50
 beam=5
 n_best=1
 
 # special params
 noise_type=drop+addition+shuffling
-deviceId=-1
+deviceId=0
 seed=999
 
 python3 scripts/two_stage_multitask_dae.py --task $task --dataset $dataset --embed_size $embed_size --hidden_size $hidden_size \

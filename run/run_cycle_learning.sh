@@ -21,14 +21,14 @@ beam_size=5
 n_best=1
 
 # special params
-labeled=0.0
+labeled=$2
 alpha=0.5
 beta=0.5
 sample_size=6
 train_scheme=dbt+drl
 reward_type=flu+sty+rel
 noise_type=drop+addition+shuffling
-deviceId=-1
+deviceId=0
 seed=999
 
 python3 scripts/cycle_learning.py --task $task --dataset $dataset --read_pdp_model_path $read_pdp_model_path \

@@ -25,7 +25,7 @@ beam=5
 n_best=1
 
 # special params
-deviceId=-1
+deviceId=0
 seed=999
 
 python3 scripts/two_stage_wmd_samples.py --task $task --dataset $dataset --embed_size $embed_size --hidden_size $hidden_size \

@@ -22,7 +22,7 @@ eval_after_epoch=60
 max_epoch=100
 
 # special params
-deviceId=-1
+deviceId=0
 seed=999
 
 python scripts/language_model.py --task $task --dataset $dataset --embed_size $embed_size --hidden_size $hidden_size --share_encoder \

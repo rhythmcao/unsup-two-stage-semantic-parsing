@@ -26,11 +26,10 @@ n_best=1
 # special params
 train_input_side=cf
 eval_input_side=cf
-labeled=1.0
-deviceId=-1
+deviceId=0
 seed=999
 
 python3 scripts/one_stage_semantic_parsing.py --task $task --dataset $dataset --embed_size $embed_size --hidden_size $hidden_size \
     --cell $cell --num_layers $num_layers --lr $lr --l2 $l2 --dropout $dropout --batch_size $batch_size --test_batch_size $test_batch_size \
     --max_norm $max_norm --max_epoch $max_epoch --init_weight $init_weight --eval_after_epoch $eval_after_epoch --beam $beam --n_best $n_best \
-    --labeled $labeled --train_input_side $train_input_side --eval_input_side $eval_input_side --deviceId $deviceId --seed $seed
+    --train_input_side $train_input_side --eval_input_side $eval_input_side --deviceId $deviceId --seed $seed

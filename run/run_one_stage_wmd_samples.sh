@@ -23,7 +23,7 @@ max_epoch=100
 beam=5
 n_best=1
 
-# special parasm
+# special params
 deviceId=0
 seed=999
 

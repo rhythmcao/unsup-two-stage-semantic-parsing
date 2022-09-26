@@ -25,7 +25,7 @@ n_best=1
 
 # special parasm
 noise_type=drop+addition+shuffling
-deviceId=-1
+deviceId=0
 seed=999
 
 python3 scripts/one_stage_multitask_dae.py --task $task --dataset $dataset --embed_size $embed_size --hidden_size $hidden_size \
