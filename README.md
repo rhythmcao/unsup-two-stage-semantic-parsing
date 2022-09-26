@@ -116,14 +116,14 @@ Next, we experiment in different settings depending on whether the annotated `(n
         ./run/run_text_style_classification.sh [dataset]
 
     By specifying the model directories for dual paraphrase model~(`--read_pdp_model_path xxx`), naive semantic parser~(`--read_nsp_model_path xxx`), language model~(`--read_language_model xxx`) and text style classifier~(`--read_tsc_model_path xxx`), the unsupervised dual paraphrasing cycle can starts:
-      - `labeled=0` -> unsupervised setting ; `labeled>0` -> semi-supervised settings
+      - `labeled=0.0` -> unsupervised setting ; `labeled>0.0` -> semi-supervised settings
       - the training scheme during cycle learning can be altered via the argument `--train_scheme xxx`
       - noisy channels for `dae` can be altered via the argument `--noise_types xxx` if the `train_scheme` contains `dae`
       - reward types during `drl` can be altered via the argument `--reward_type xxx` if the `train_scheme` contains `drl`
 
             ./run/run_cycle_learning.sh [dataset] [labeled]
 
-All experiments above use the `torch.device("cuda:0")` by default, which can be changed to other index by changing the argument `--deviceId x` (x=-1 -> cpu, otherwise GPU index).
+All experiments above use the `torch.device("cuda:0")` by default, which can be changed to other index by changing the argument `--deviceId x` (x=-1 -> cpu, otherwise GPU index). One single GeForce RTX 2080 Ti is enough to conduct all tasks.
 
 ----
 

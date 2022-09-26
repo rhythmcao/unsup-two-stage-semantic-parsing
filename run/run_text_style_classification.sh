@@ -17,8 +17,8 @@ batch_size=50
 test_batch_size=128
 init_weight=0.2
 max_norm=5
-eval_after_epoch=60
-max_epoch=100
+eval_after_epoch=10
+max_epoch=50
 
 # special params
 deviceId=0

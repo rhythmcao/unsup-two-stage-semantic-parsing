@@ -60,7 +60,7 @@ if not args.testing:
     num_training_steps = args.max_epoch * ((len(train_dataset) + args.batch_size - 1) // args.batch_size)
     num_warmup_steps = int(args.warmup_ratio * num_training_steps)
     optimizer, scheduler = set_optimizer(model, args, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
-    best_result = {"iter": 0, "metric": 0, "dev_acc": 0., "test_acc": 0.}
+    best_result = {"iter": 0, "nl_bleu": 0., "cf_acc": 0., "dev_acc": 0., "test_acc": 0.}
     logger.info("Start training ... ...")
     nl2cf_data_index, cf2nl_data_index = np.arange(len(train_dataset)), np.arange(len(train_dataset))
 
@@ -96,7 +96,6 @@ if not args.testing:
 
         start_time = time.time()
         nl_bleu, cf_acc = decode(model, dev_dataset, None, args.test_batch_size, beam_size=args.beam_size, device=device, task='unsupervised_cycle_consistency')
-        metric = (nl_bleu * 4 + cf_acc) / 2
         logger.info(f'Unsupervised Dev Evaluation:\tEpoch: {i:d}\tTime: {time.time() - start_time:.2f}s\tCycle consistency NL Bleu/CF Acc: {nl_bleu:.4f}/{cf_acc:.4f}')
 
         start_time = time.time()
@@ -109,8 +108,8 @@ if not args.testing:
             beam_size=args.beam_size, n_best=args.n_best, device=device, task=decode_task)
         logger.info(f'Test Evaluation:\tEpoch: {i:d}\tTime: {time.time() - start_time:.2f}s\tTest Acc: {test_acc:.4f}')
 
-        if metric >= best_result['metric']:
-            best_result['iter'], best_result['metric'], best_result['dev_acc'], best_result['test_acc'] = i, metric, dev_acc, test_acc
+        if nl_bleu + cf_acc > best_result['nl_bleu'] + best_result['cf_acc']:
+            best_result['iter'], best_result['nl_bleu'], best_result['cf_acc'], best_result['dev_acc'], best_result['test_acc'] = i, nl_bleu, cf_acc, dev_acc, test_acc
             torch.save({'model': model.state_dict(), 'result': best_result}, open(os.path.join(exp_path, 'model.pkl'), 'wb'))
             logger.info(f'NEW BEST:\tEpoch: {i:d}\tBest Dev Acc: {dev_acc:.4f}\tBest Test Acc: {test_acc:.4f}')
 

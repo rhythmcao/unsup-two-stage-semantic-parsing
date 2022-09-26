@@ -18,7 +18,7 @@ batch_size=16
 test_batch_size=128
 init_weight=0.2
 max_norm=5
-eval_after_epoch=60
+eval_after_epoch=30
 max_epoch=100
 
 # special params

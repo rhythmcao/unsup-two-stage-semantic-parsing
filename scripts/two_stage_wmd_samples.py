@@ -94,7 +94,7 @@ if not args.testing:
             beam_size=args.beam_size, n_best=args.n_best, device=device, task=decode_task)
         logger.info(f'Test Evaluation:\tEpoch: {i:d}\tTime: {time.time() - start_time:.2f}s\tTest Acc: {test_acc:.4f}')
 
-        if dev_acc >= best_result['dev_acc']:
+        if dev_acc > best_result['dev_acc']:
             best_result['iter'], best_result['dev_acc'], best_result['test_acc'] = i, dev_acc, test_acc
             torch.save({'model': model.state_dict(), 'result': best_result}, open(os.path.join(exp_path, 'model.pkl'), 'wb'))
             logger.info(f'NEW BEST:\tEpoch: {i:d}\tBest Dev Acc: {dev_acc:.4f}\tBest Test Acc: {test_acc:.4f}')
