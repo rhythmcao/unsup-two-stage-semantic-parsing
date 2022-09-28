@@ -64,6 +64,8 @@ class CycleLearningModel(nn.Module):
         elif 'rel' in self.reward_model.reward_type:
             total_reward = coefficient * val_reward + (1 - coefficient) * rec_reward
         else: total_reward = coefficient * val_reward
+
+        total_reward = torch.clamp(total_reward, -5.0, 5.0)
         primal_loss = - torch.mean(total_reward * primal_scores, dim=1)
         dual_loss = - torch.mean((1 - coefficient) * dual_scores, dim=1)
         return torch.sum(primal_loss), torch.sum(dual_loss)
